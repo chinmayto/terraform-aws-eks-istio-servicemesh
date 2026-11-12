@@ -1,0 +1,41 @@
+####################################################################################
+### AuthorizationPolicy — L7 access control on top of mTLS identity
+###
+### mTLS proves WHO is calling (workload identity). AuthorizationPolicy decides
+### WHAT that identity is allowed to do. Because the sidecar terminates mTLS, the
+### policy can match on the verified source identity (principal) and on L7
+### attributes like HTTP method and path.
+###
+### This policy allows:
+###   - the ingress gateway's identity to reach nodejs-app (so external traffic
+###     routed by the Gateway/VirtualService still works), and
+###   - any meshed workload inside istio-demo to issue GET requests.
+### Everything else is denied by default, because once ANY ALLOW policy applies
+### to a workload, only requests that match an ALLOW rule get through.
+####################################################################################
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: nodejs-app-allow
+  namespace: istio-demo
+spec:
+  selector:
+    matchLabels:
+      app: nodejs-app
+  action: ALLOW
+  rules:
+    # 1) Allow traffic coming in through the Istio ingress gateway.
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/istio-ingress/sa/istio-ingressgateway"
+    # 2) Allow GET requests from any workload in the istio-demo namespace.
+    - from:
+        - source:
+            namespaces:
+              - istio-demo
+      to:
+        - operation:
+            methods:
+              - GET

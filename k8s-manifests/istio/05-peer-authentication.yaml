@@ -1,0 +1,26 @@
+####################################################################################
+### PeerAuthentication — enforce STRICT mutual TLS inside the namespace
+###
+### istiod is a certificate authority: it issues a short-lived identity cert to
+### every sidecar. With mode STRICT, each sidecar in istio-demo will ONLY accept
+### connections that present a valid Istio mTLS cert, and will reject any
+### plaintext traffic. This gives you in-cluster encryption and cryptographic
+### workload identity for free — again, no application changes.
+###
+### Verify it's on:
+###   # From a meshed pod, calls between services should succeed over mTLS.
+###   # A call from a NON-meshed pod (no sidecar) to nodejs-app will be refused.
+###   istioctl authn tls-check <pod>.istio-demo nodejs-app.istio-demo.svc.cluster.local
+###
+### Tip: start with PERMISSIVE if you are migrating an existing app and still
+### have some non-meshed clients, then move to STRICT once everything is meshed.
+####################################################################################
+---
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: istio-demo
+spec:
+  mtls:
+    mode: STRICT

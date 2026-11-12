@@ -1,0 +1,44 @@
+####################################################################################
+### DestinationRule — define the "subsets" and the connection policy
+###
+### A DestinationRule describes what happens to traffic AFTER routing has picked
+### a destination service. Here it does two things:
+###
+###   1. Declares named subsets (v1, v2) mapped to the pod `version` label. These
+###      names are what the VirtualService refers to when it splits traffic.
+###
+###   2. Sets a traffic policy:
+###        - tls.mode ISTIO_MUTUAL  -> the sidecar uses Istio-issued certs to
+###          speak mutual TLS to the upstream (encryption + identity).
+###        - connectionPool / outlierDetection -> resilience: cap concurrent
+###          requests and eject pods that keep returning 5xx (circuit breaking).
+####################################################################################
+---
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: nodejs-app
+  namespace: istio-demo
+spec:
+  host: nodejs-app.istio-demo.svc.cluster.local
+  trafficPolicy:
+    tls:
+      mode: ISTIO_MUTUAL
+    connectionPool:
+      tcp:
+        maxConnections: 100
+      http:
+        http1MaxPendingRequests: 100
+        maxRequestsPerConnection: 10
+    outlierDetection:
+      consecutive5xxErrors: 5
+      interval: 10s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+  subsets:
+    - name: v1
+      labels:
+        version: v1
+    - name: v2
+      labels:
+        version: v2

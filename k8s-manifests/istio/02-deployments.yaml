@@ -1,0 +1,123 @@
+####################################################################################
+### Two versions of one service + a single Service in front of both
+###
+### This is the heart of the service-mesh demo. There are TWO Deployments of the
+### same logical app ("nodejs-app"), labelled version: v1 and version: v2, and
+### ONE Kubernetes Service that selects both. On its own, Kubernetes would load
+### balance randomly across every v1 and v2 pod. Istio lets us control that split
+### precisely (see 03-destinationrule.yaml and 04-gateway-virtualservice.yaml).
+###
+### Port trick: the two demo images listen on different ports (v1 -> 8080,
+### v2 -> 8081). Each Deployment names its container port "http", and the Service
+### targets the port BY NAME. Kubernetes resolves a named targetPort per-pod, so
+### one Service cleanly fronts both versions despite the different ports.
+###
+### Every pod here gets an injected Envoy sidecar (because the namespace is
+### labelled istio-injection=enabled), so `kubectl get pod` will show 2/2
+### containers ready: the app + istio-proxy.
+####################################################################################
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nodejs-app-v1
+  namespace: istio-demo
+  labels:
+    app: nodejs-app
+    version: v1
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nodejs-app
+      version: v1
+  template:
+    metadata:
+      labels:
+        app: nodejs-app
+        version: v1
+    spec:
+      containers:
+        - name: nodejs-app
+          image: public.ecr.aws/n4o6g6h8/simple-nodejs-app-1:latest
+          imagePullPolicy: Always
+          ports:
+            # Named port so the Service can target it by name across versions.
+            - name: http
+              containerPort: 8080
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nodejs-app-v2
+  namespace: istio-demo
+  labels:
+    app: nodejs-app
+    version: v2
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nodejs-app
+      version: v2
+  template:
+    metadata:
+      labels:
+        app: nodejs-app
+        version: v2
+    spec:
+      containers:
+        - name: nodejs-app
+          image: public.ecr.aws/n4o6g6h8/simple-nodejs-app-2:latest
+          imagePullPolicy: Always
+          ports:
+            # Same port NAME as v1 ("http") but a different number (8081).
+            - name: http
+              containerPort: 8081
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nodejs-app
+  namespace: istio-demo
+  labels:
+    app: nodejs-app
+spec:
+  type: ClusterIP
+  selector:
+    # Selects BOTH v1 and v2 pods — only matches on `app`, not `version`.
+    app: nodejs-app
+  ports:
+    # Istio uses the port name prefix ("http") to detect the L7 protocol.
+    # targetPort is the NAMED port, so it resolves to 8080 on v1 pods and
+    # 8081 on v2 pods.
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP

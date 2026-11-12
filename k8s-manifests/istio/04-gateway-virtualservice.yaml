@@ -1,0 +1,81 @@
+####################################################################################
+### Gateway + VirtualService — ingress and L7 routing
+###
+### Gateway:        binds the shared istio-ingressgateway (the LoadBalancer the
+###                 Terraform `gateway` chart created) to HTTP :80 for any host.
+###                 It is the mesh's front door.
+###
+### VirtualService: the routing rules. Two things worth noticing:
+###
+###   1. Weighted split (canary): 80% of traffic to subset v1, 20% to v2. Change
+###      the weights and re-apply to shift the canary — no redeploy of the app.
+###
+###   2. Header-based routing: a request with `x-version: v2` is pinned to v2
+###      regardless of the weights. This is how you give testers/early adopters a
+###      specific version while everyone else rides the weighted split.
+###
+### Also configured: a request timeout and automatic retries — resilience
+### behaviour added by the mesh, not the application.
+###
+### Try it:
+###   GW=$(kubectl -n istio-ingress get svc istio-ingressgateway \
+###         -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+###   # ~80/20 split across many requests:
+###   for i in $(seq 1 20); do curl -s "http://$GW/" ; echo; done
+###   # Force v2 via header:
+###   curl -s -H "x-version: v2" "http://$GW/"
+####################################################################################
+---
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: nodejs-app-gateway
+  namespace: istio-demo
+spec:
+  # Matches the pod labels applied by the istio/gateway Helm release
+  # (release name istio-ingressgateway -> label istio: ingressgateway).
+  selector:
+    istio: ingressgateway
+  servers:
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      hosts:
+        - "*"
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: nodejs-app
+  namespace: istio-demo
+spec:
+  hosts:
+    - "*"
+  gateways:
+    - nodejs-app-gateway
+  http:
+    # Rule 1: explicit opt-in to v2 via request header.
+    - match:
+        - headers:
+            x-version:
+              exact: v2
+      route:
+        - destination:
+            host: nodejs-app.istio-demo.svc.cluster.local
+            subset: v2
+    # Rule 2: default weighted canary split for everyone else.
+    - route:
+        - destination:
+            host: nodejs-app.istio-demo.svc.cluster.local
+            subset: v1
+          weight: 80
+        - destination:
+            host: nodejs-app.istio-demo.svc.cluster.local
+            subset: v2
+          weight: 20
+      timeout: 5s
+      retries:
+        attempts: 3
+        perTryTimeout: 2s
+        retryOn: 5xx,reset,connect-failure

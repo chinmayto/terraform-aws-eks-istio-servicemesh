@@ -1,0 +1,25 @@
+####################################################################################
+### Demo namespace
+###
+### The `istio-injection=enabled` label is what makes this a mesh namespace.
+### When istiod sees it, its mutating webhook injects an Envoy sidecar container
+### into every pod created here. That sidecar is the Istio data plane: it
+### intercepts all inbound/outbound traffic for the pod, which is what lets
+### Istio do mTLS, traffic routing, retries, and telemetry WITHOUT any change to
+### the application code or image.
+###
+### Apply order:
+###   kubectl apply -f k8s-manifests/istio/01-namespace.yaml
+###   kubectl apply -f k8s-manifests/istio/02-deployments.yaml
+###   kubectl apply -f k8s-manifests/istio/03-destinationrule.yaml
+###   kubectl apply -f k8s-manifests/istio/04-gateway-virtualservice.yaml
+###   kubectl apply -f k8s-manifests/istio/05-peer-authentication.yaml
+###   kubectl apply -f k8s-manifests/istio/06-authorization-policy.yaml
+####################################################################################
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: istio-demo
+  labels:
+    istio-injection: enabled
